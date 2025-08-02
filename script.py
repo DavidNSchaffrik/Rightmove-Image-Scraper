@@ -266,7 +266,142 @@ text_y += 10
 # address (wrapped)
 _draw_wrapped_text(draw, address, subtitle_font, max_text_width, padding, text_y, line_spacing)
 
-# save
+# Adding Icons
+
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+# ---------- LOAD BASE ----------
+image_path = os.path.join(download_folder, "image_1.jpg")
+if not os.path.exists(image_path):
+    print(f"[ERROR] Image not found at {image_path}. Cannot create collage.")
+    exit()
+
+img = Image.open(image_path).convert("RGB")
+original_width, original_height = img.size
+
+font_path = "arial.ttf"  # adjust if needed
+title_font = ImageFont.truetype(font_path, size=80)
+subtitle_font = ImageFont.truetype(font_path, size=50)
+value_font = ImageFont.truetype(font_path, size=40)
+
+padding = 40
+line_spacing = 10
+gap_price_address = 10
+gap_text_icons = 30
+gap_icon_value = 6
+spacing_x = 70  # gap between icon clusters
+
+# ---------- TEXT WRAP HELPERS ----------
+def text_wh(draw, text, font):
+    l, t, r, b = draw.textbbox((0, 0), text, font=font)
+    return r - l, b - t
+
+def wrap_text_to_width(draw, text, font, max_w):
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        test = w if not cur else f"{cur} {w}"
+        wpx, _ = text_wh(draw, test, font)
+        if wpx <= max_w:
+            cur = test
+        else:
+            if cur: lines.append(cur)
+            cur = w
+    if cur: lines.append(cur)
+    return lines
+
+# ---------- MEASURE EVERYTHING FIRST ----------
+measure = Image.new("RGB", (original_width, 10), "black")
+m_draw = ImageDraw.Draw(measure)
+max_text_w = original_width - 2 * padding
+
+price_lines = wrap_text_to_width(m_draw, price, title_font, max_text_w)
+addr_lines  = wrap_text_to_width(m_draw, address, subtitle_font, max_text_w)
+
+_, title_h = text_wh(m_draw, "Ay", title_font)
+_, sub_h   = text_wh(m_draw, "Ay", subtitle_font)
+_, val_h   = text_wh(m_draw, "9999", value_font)
+
+text_block_h = (
+    len(price_lines) * (title_h + line_spacing) +
+    gap_price_address +
+    len(addr_lines)  * (sub_h + line_spacing)
+)
+
+# ---------- ICONS (PNG) ----------
+icon_paths = [
+    "icons/house.png",      # house type
+    "icons/bed.png",        # bedrooms
+    "icons/bathroom.png",   # bathrooms
+    "icons/floorplan.png"   # square feet
+]
+value_texts = ["9999", "9999", "9999", "9999"]
+
+# target icon height; we won't upscale beyond native size to avoid blur
+target_icon_h = 96
+
+icons = []
+cluster_widths = []
+for pth, val in zip(icon_paths, value_texts):
+    ico = Image.open(pth).convert("RGBA")
+    # don't upscale to avoid blur
+    t_h = min(target_icon_h, ico.height)
+    ico = ImageOps.contain(ico, (10_000, t_h), method=Image.LANCZOS)
+    icons.append((ico, val))
+    val_w, _ = text_wh(m_draw, val, value_font)
+    cluster_widths.append(max(ico.width, val_w))
+
+icons_row_h = max(i.size[1] for i, _ in icons) + gap_icon_value + val_h
+icons_row_w = sum(cluster_widths) + spacing_x * (len(icons) - 1)
+
+# ---------- COMPUTE BANNER HEIGHT DYNAMICALLY ----------
+banner_height = (
+    padding +
+    text_block_h +
+    gap_text_icons +
+    icons_row_h +
+    padding
+)
+
+new_height = original_height + banner_height
+new_img = Image.new("RGB", (original_width, new_height), color=(0, 0, 0))
+new_img.paste(img, (0, 0))
+draw = ImageDraw.Draw(new_img)
+
+# ---------- DRAW TEXT ----------
+y = original_height + padding
+for line in price_lines:
+    draw.text((padding, y), line, font=title_font, fill=(255, 255, 255))
+    y += title_h + line_spacing
+
+y += gap_price_address
+for line in addr_lines:
+    draw.text((padding, y), line, font=subtitle_font, fill=(255, 255, 255))
+    y += sub_h + line_spacing
+
+# ---------- DRAW ICONS (CENTERED) + VALUES UNDER ----------
+y += gap_text_icons
+row_y = y
+total_w = icons_row_w
+start_x = (original_width - total_w) // 2
+
+x = start_x
+for (ico, val), cw in zip(icons, cluster_widths):
+    # icon centered within its cluster box
+    icon_x = int(x + (cw - ico.width) // 2)
+    icon_y = int(row_y)
+    new_img.paste(ico, (icon_x, icon_y), ico)
+
+    # value centered under icon
+    val_w, _ = text_wh(draw, val, value_font)
+    val_x = int(x + (cw - val_w) // 2)
+    val_y = int(row_y + ico.height + gap_icon_value)
+    draw.text((val_x, val_y), val, font=value_font, fill=(255, 255, 255))
+
+    x += cw + spacing_x
+
+# ---------- SAVE ----------
+output_path = image_path  # overwrite image_1.jpg
 new_img.save(output_path)
-print(f"[SUCCESS] Collage created and saved (replacing image_1) at: {output_path}")
+print(f"[SUCCESS] Collage created and saved at: {output_path}")
+
 
