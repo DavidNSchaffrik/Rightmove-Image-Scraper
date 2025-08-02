@@ -327,6 +327,80 @@ text_block_h = (
     len(addr_lines)  * (sub_h + line_spacing)
 )
 
+
+# -------------------------------
+# === SCRAPE ICON VALUES (type, beds, baths, sqft) ===
+# -------------------------------
+print("[INFO] Extracting property stats (type / beds / baths / size)...")
+
+# XPaths provided
+X_HOUSE_TYPE = r"/html/body/div[2]/main/div/div[2]/div/article[2]/dl/div[1]/dd/span/p"
+X_BEDROOMS   = r"/html/body/div[2]/main/div/div[2]/div/article[2]/dl/div[2]/dd/span/p"
+X_BATHROOMS  = r"/html/body/div[2]/main/div/div[2]/div/article[2]/dl/div[3]/dd/span/p"
+X_SIZE_SQFT  = r"/html/body/div[2]/main/div/div[2]/div/article[2]/dl/div[4]/dd/span/p[1]"
+
+def grab_text(wait, xpath, label):
+    """Wait for an element, return its trimmed text with logging."""
+    try:
+        el = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+        txt = (el.text or "").strip()
+        if txt:
+            print(f"[INFO] {label}: {txt}")
+            return txt
+        else:
+            print(f"[WARN] {label} element found but empty.")
+            return "N/A"
+    except Exception as e:
+        print(f"[WARN] Could not extract {label}: {e}")
+        return "N/A"
+
+# Open a lightweight, fresh driver just for these details
+stats_driver = webdriver.Chrome(service=service, options=options)
+try:
+    stats_driver.get(rightmove_url)
+
+    # If a consent banner appears again, try to dismiss (best-effort)
+    try:
+        consent_button_xpath = "/html/body/div[7]/div[2]/div/div/div[2]/div/div/button[2]"
+        WebDriverWait(stats_driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, consent_button_xpath))
+        ).click()
+        print("[INFO] (stats) Clicked consent button.")
+    except Exception:
+        pass  # no consent shown; continue
+
+    wait = WebDriverWait(stats_driver, 10)
+
+    house_type = grab_text(wait, X_HOUSE_TYPE, "House type")
+    bedrooms   = grab_text(wait, X_BEDROOMS,   "Bedrooms")
+    bathrooms  = grab_text(wait, X_BATHROOMS,  "Bathrooms")
+    size_sqft  = grab_text(wait, X_SIZE_SQFT,  "Size (sqft)")
+
+finally:
+    try:
+        stats_driver.quit()
+    except Exception:
+        pass
+
+# Optional: light normalization for numbers (keeps original fallback if not found)
+import re
+def extract_number(s, default="N/A"):
+    if not s: return default
+    m = re.search(r"\d[\d,\.]*", s)
+    return m.group(0) if m else default
+
+bedrooms_disp  = extract_number(bedrooms,  "N/A")
+bathrooms_disp = extract_number(bathrooms, "N/A")
+# size may be like "3,968 sq ft" already; keep as-is if contains "ft", else show number
+size_disp = size_sqft if ("ft" in size_sqft.lower() or "sqm" in size_sqft.lower() or "m²" in size_sqft.lower()) else extract_number(size_sqft, "N/A")
+
+# Type may be "Terraced", "Freehold", etc.—keep full text
+type_disp = house_type if house_type != "N/A" else "N/A"
+
+print(f"[INFO] Final stats -> Type: {type_disp} | Beds: {bedrooms_disp} | Baths: {bathrooms_disp} | Size: {size_disp}")
+
+
+
 # ---------- ICONS (PNG) ----------
 icon_paths = [
     "icons/house.png",      # house type
@@ -334,7 +408,7 @@ icon_paths = [
     "icons/bathroom.png",   # bathrooms
     "icons/floorplan.png"   # square feet
 ]
-value_texts = ["Freehold", "2", "2", "9999sqft"]
+value_texts = [type_disp, bedrooms_disp, bathrooms_disp, size_disp]
 
 # slightly smaller icons
 target_icon_h = 64  # was 96
