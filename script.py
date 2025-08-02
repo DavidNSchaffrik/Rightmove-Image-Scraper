@@ -334,24 +334,24 @@ icon_paths = [
     "icons/bathroom.png",   # bathrooms
     "icons/floorplan.png"   # square feet
 ]
-value_texts = ["9999", "9999", "9999", "9999"]
+value_texts = ["Freehold", "2", "2", "9999sqft"]
 
-# target icon height; we won't upscale beyond native size to avoid blur
-target_icon_h = 96
+# slightly smaller icons
+target_icon_h = 64  # was 96
+side_padding = 40   # left/right padding for the row
+gap_icon_value = 8  # icon -> value
+# no spacing_x needed—using equal columns
 
 icons = []
-cluster_widths = []
-for pth, val in zip(icon_paths, value_texts):
+for pth in icon_paths:
     ico = Image.open(pth).convert("RGBA")
-    # don't upscale to avoid blur
+    # don't upscale -> avoids blur
     t_h = min(target_icon_h, ico.height)
     ico = ImageOps.contain(ico, (10_000, t_h), method=Image.LANCZOS)
-    icons.append((ico, val))
-    val_w, _ = text_wh(m_draw, val, value_font)
-    cluster_widths.append(max(ico.width, val_w))
+    icons.append(ico)
 
-icons_row_h = max(i.size[1] for i, _ in icons) + gap_icon_value + val_h
-icons_row_w = sum(cluster_widths) + spacing_x * (len(icons) - 1)
+# row height for banner sizing
+icons_row_h = max(i.size[1] for i in icons) + gap_icon_value + val_h
 
 # ---------- COMPUTE BANNER HEIGHT DYNAMICALLY ----------
 banner_height = (
@@ -378,26 +378,29 @@ for line in addr_lines:
     draw.text((padding, y), line, font=subtitle_font, fill=(255, 255, 255))
     y += sub_h + line_spacing
 
-# ---------- DRAW ICONS (CENTERED) + VALUES UNDER ----------
+# ---------- DRAW ICONS (EQUAL COLUMNS) + VALUES UNDER ----------
 y += gap_text_icons
-row_y = y
-total_w = icons_row_w
-start_x = (original_width - total_w) // 2
+row_y = int(y)
 
-x = start_x
-for (ico, val), cw in zip(icons, cluster_widths):
-    # icon centered within its cluster box
-    icon_x = int(x + (cw - ico.width) // 2)
+n = len(icons)
+inner_w = original_width - 2 * side_padding
+col_w = inner_w / n  # may be float; we center per-column
+
+for i, (ico, val) in enumerate(zip(icons, value_texts)):
+    # column center
+    center_x = int(side_padding + (i + 0.5) * col_w)
+
+    # icon centered in its column
+    icon_x = int(center_x - ico.width // 2)
     icon_y = int(row_y)
     new_img.paste(ico, (icon_x, icon_y), ico)
 
     # value centered under icon
-    val_w, _ = text_wh(draw, val, value_font)
-    val_x = int(x + (cw - val_w) // 2)
-    val_y = int(row_y + ico.height + gap_icon_value)
+    val_w, val_hh = text_wh(draw, val, value_font)
+    val_x = int(center_x - val_w // 2)
+    val_y = int(icon_y + ico.height + gap_icon_value)
     draw.text((val_x, val_y), val, font=value_font, fill=(255, 255, 255))
 
-    x += cw + spacing_x
 
 # ---------- SAVE ----------
 output_path = image_path  # overwrite image_1.jpg
